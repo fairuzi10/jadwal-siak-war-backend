@@ -10,11 +10,36 @@ import (
 	"path"
 	"time"
 
-	siak "github.com/fairuzi10/jadwal-siak-war-backend"
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+
+	"cloud.google.com/go/storage"
 )
+
+var (
+	StorageBucket     *storage.BucketHandle
+	StorageBucketName string
+)
+
+func init() {
+	var err error
+
+	StorageBucketName = "jadwal-siak-war"
+	StorageBucket, err = configureStorage(StorageBucketName)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func configureStorage(bucketID string) (*storage.BucketHandle, error) {
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.Bucket(bucketID), nil
+}
 
 func main() {
 	port := os.Getenv("PORT")
@@ -65,7 +90,7 @@ func uploadHTMLFile(r *http.Request) (url string, appErr *appError) {
 	name := time.Now().Format(time.RFC3339) + "-" + uuid.Must(uuid.NewV4()).String() + path.Ext(fh.Filename)
 
 	ctx := context.Background()
-	w := siak.StorageBucket.Object(name).NewWriter(ctx)
+	w := StorageBucket.Object(name).NewWriter(ctx)
 
 	w.ContentType = contentType
 	w.CacheControl = "public, max-age=86400" // 1 day
@@ -78,7 +103,7 @@ func uploadHTMLFile(r *http.Request) (url string, appErr *appError) {
 	}
 
 	const publicURL = "https://storage.googleapis.com/%s/%s"
-	return fmt.Sprintf(publicURL, siak.StorageBucketName, name), nil
+	return fmt.Sprintf(publicURL, StorageBucketName, name), nil
 }
 
 func uploadHTMLFileHandler(w http.ResponseWriter, r *http.Request) *appError {
