@@ -57,13 +57,20 @@ func uploadHTMLFile(r *http.Request) (url string, appErr *appError) {
 		}
 	}
 
-	filename := time.Now().Format(time.RFC3339) + "-" + uuid.Must(uuid.NewV4()).String() + path.Ext(fh.Filename)
+	anonymous := r.FormValue("anonymous")
+	if anonymous != "true" {
+		anonymous = "false"
+	}
+
+	filename := fmt.Sprintf("%s.%s.%s%s", time.Now().Format(time.RFC3339), anonymous,
+		uuid.Must(uuid.NewV4()).String(), path.Ext(fh.Filename))
+	println(filename)
 
 	ctx := appengine.NewContext(r)
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		log.Errorf(ctx, "failed to create client: %v", err)
-		return
+		return "", internalServerError(err)
 	}
 	defer client.Close()
 
