@@ -1,53 +1,24 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path"
 	"time"
 
+	"cloud.google.com/go/storage"
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-
-	"cloud.google.com/go/storage"
+	"google.golang.org/appengine"
+	"google.golang.org/appengine/log"
 )
-
-var (
-	StorageBucket     *storage.BucketHandle
-	StorageBucketName string
-)
-
-func init() {
-	var err error
-
-	StorageBucketName = "jadwal-siak-war"
-	StorageBucket, err = configureStorage(StorageBucketName)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func configureStorage(bucketID string) (*storage.BucketHandle, error) {
-	ctx := context.Background()
-	client, err := storage.NewClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return client.Bucket(bucketID), nil
-}
 
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
 	registerHandlers()
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), nil))
+	appengine.Main()
 }
 
 func registerHandlers() {
@@ -86,11 +57,20 @@ func uploadHTMLFile(r *http.Request) (url string, appErr *appError) {
 		}
 	}
 
-	// random filename, retaining existing extension.
-	name := time.Now().Format(time.RFC3339) + "-" + uuid.Must(uuid.NewV4()).String() + path.Ext(fh.Filename)
+	filename := time.Now().Format(time.RFC3339) + "-" + uuid.Must(uuid.NewV4()).String() + path.Ext(fh.Filename)
 
-	ctx := context.Background()
-	w := StorageBucket.Object(name).NewWriter(ctx)
+	ctx := appengine.NewContext(r)
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		log.Errorf(ctx, "failed to create client: %v", err)
+		return
+	}
+	defer client.Close()
+
+	bucketName := "jadwal-siak-war"
+	storageBucket := client.Bucket(bucketName)
+	object := storageBucket.Object(filename)
+	w := object.NewWriter(ctx)
 
 	w.ContentType = contentType
 	w.CacheControl = "public, max-age=86400" // 1 day
@@ -103,7 +83,7 @@ func uploadHTMLFile(r *http.Request) (url string, appErr *appError) {
 	}
 
 	const publicURL = "https://storage.googleapis.com/%s/%s"
-	return fmt.Sprintf(publicURL, StorageBucketName, name), nil
+	return fmt.Sprintf(publicURL, bucketName, filename), nil
 }
 
 func uploadHTMLFileHandler(w http.ResponseWriter, r *http.Request) *appError {
@@ -125,7 +105,7 @@ type appError struct {
 
 func (fn appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if e := fn(w, r); e != nil { // e is *appError, not os.Error.
-		log.Printf("Handler error: status code: %d, underlying err: %#v",
+		log.Errorf(appengine.NewContext(r), "Handler error: status code: %d, underlying err: %#v",
 			e.Code, e.Error)
 
 		http.Error(w, e.Message, e.Code)
