@@ -64,7 +64,6 @@ func uploadHTMLFile(r *http.Request) (url string, appErr *appError) {
 
 	filename := fmt.Sprintf("%s.%s.%s%s", time.Now().Format(time.RFC3339), anonymous,
 		uuid.Must(uuid.NewV4()).String(), path.Ext(fh.Filename))
-	println(filename)
 
 	ctx := appengine.NewContext(r)
 	client, err := storage.NewClient(ctx)
